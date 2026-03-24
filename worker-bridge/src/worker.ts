@@ -6,15 +6,18 @@
  * cloudflare_temp_email Worker running in a different account.
  *
  * Required environment variables / secrets:
- *   MAIN_WORKER_URL   - Full URL of the main Worker, e.g. https://my-worker.workers.dev
- *   MAIL_RELAY_SECRET - Shared secret that authenticates this bridge to the main Worker
- *                       Must match MAIL_RELAY_SECRET set on the main Worker.
- *                       Set via: wrangler secret put MAIL_RELAY_SECRET
+ *   MAIN_WORKER_URL    - Full URL of the main Worker, e.g. https://my-worker.workers.dev
+ *   MAIL_RELAY_SECRET  - Shared secret that authenticates this bridge to the main Worker
+ *                        Must match MAIL_RELAY_SECRET set on the main Worker.
+ *                        Set via: wrangler secret put MAIL_RELAY_SECRET
+ *   MAIN_WORKER_PASSWORD - (Optional) Password for main Worker's x-custom-auth header
+ *                          Only needed if main Worker has password protection enabled.
  */
 
 interface Env {
     MAIN_WORKER_URL: string
     MAIL_RELAY_SECRET: string
+    MAIN_WORKER_PASSWORD?: string
 }
 
 export default {
@@ -27,11 +30,7 @@ export default {
 
         if (url.pathname === '/health') {
             return new Response(
-                JSON.stringify({
-                    status: 'ok',
-                    MAIN_WORKER_URL: env.MAIN_WORKER_URL || null,
-                    MAIL_RELAY_SECRET: env.MAIL_RELAY_SECRET || null,
-                }, null, 2),
+                JSON.stringify({ status: 'ok' }),
                 {
                     status: 200,
                     headers: {
@@ -73,15 +72,22 @@ export default {
             messageId: message.headers.get('Message-ID'),
         })
 
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'X-Relay-Secret': env.MAIL_RELAY_SECRET,
+        }
+
+        // Add password auth if main Worker has password protection
+        if (env.MAIN_WORKER_PASSWORD) {
+            headers['x-custom-auth'] = env.MAIN_WORKER_PASSWORD
+        }
+
         try {
             const res = await fetch(
                 `${env.MAIN_WORKER_URL.replace(/\/$/, '')}/external/api/relay_email`,
                 {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Relay-Secret': env.MAIL_RELAY_SECRET,
-                    },
+                    headers,
                     body,
                 }
             )

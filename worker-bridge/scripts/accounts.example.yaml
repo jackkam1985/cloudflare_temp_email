@@ -11,6 +11,10 @@ main_worker_url: "https://your-main-worker.workers.dev"
 # Generate with: openssl rand -hex 32
 mail_relay_secret: "CHANGE_ME_use_openssl_rand_-hex_32"
 
+# (Optional) Password for main Worker's x-custom-auth header.
+# Only needed if main Worker has "private site password" enabled.
+# main_worker_password: "your-password"
+
 # Name to use for the bridge Worker created in every account
 worker_name: "cloudflare-email-relay-bridge"
 
@@ -21,6 +25,7 @@ accounts:
   - email: "you@example.com"           # CF login email for account 1
     api_key: "GLOBAL_API_KEY_ACCOUNT_1"
     # account_id: "optional"           # leave blank → auto-detected
+    # workers_dev_subdomain: "myname"  # optional: auto-register workers.dev subdomain
     domains:
       - "domain1.com"
       - "domain2.com"

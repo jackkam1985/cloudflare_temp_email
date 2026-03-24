@@ -42,11 +42,7 @@ export default {
 
     if (url.pathname === '/health') {
       return new Response(
-        JSON.stringify({
-          status: 'ok',
-          MAIN_WORKER_URL: env.MAIN_WORKER_URL || null,
-          MAIL_RELAY_SECRET: env.MAIL_RELAY_SECRET || null,
-        }, null, 2),
+        JSON.stringify({ status: 'ok' }),
         {
           status: 200,
           headers: {
@@ -84,15 +80,21 @@ export default {
       messageId: message.headers.get('Message-ID'),
     });
 
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Relay-Secret': env.MAIL_RELAY_SECRET,
+    };
+
+    if (env.MAIN_WORKER_PASSWORD) {
+      headers['x-custom-auth'] = env.MAIN_WORKER_PASSWORD;
+    }
+
     try {
       const res = await fetch(
         `${env.MAIN_WORKER_URL.replace(/\/$/, '')}/external/api/relay_email`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Relay-Secret': env.MAIL_RELAY_SECRET,
-          },
+          headers,
           body,
         }
       );
@@ -130,6 +132,11 @@ class CloudflareClient:
         r.raise_for_status()
         return r.json()
 
+    def _post(self, path: str, json_data: dict | None = None) -> dict:
+        r = self.session.post(f"{CF_API}{path}", json=json_data, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
     # ── Account ──────────────────────────────────────────────────────────────
 
     def get_account_id(self) -> str:
@@ -146,6 +153,67 @@ class CloudflareClient:
             )
         return accounts[0]["id"]
 
+    def ensure_workers_dev_active(self, account_id: str, dry_run: bool = False) -> str | None:
+        """
+        Check and activate workers.dev subdomain.
+        Returns the workers.dev subdomain if active, None otherwise.
+        """
+        # Check current workers.dev status
+        try:
+            r = self.session.get(
+                f"{CF_API}/accounts/{account_id}/workers/subdomain",
+                timeout=30
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("success") and data.get("result", {}).get("subdomain"):
+                    subdomain = data["result"]["subdomain"]
+                    print(f"    ✓ workers.dev subdomain already active: {subdomain}.workers.dev")
+                    return subdomain
+        except Exception as e:
+            print(f"    ⚠ Failed to check workers.dev status: {e}")
+
+        # Try to get or create subdomain
+        print("    ⚠ workers.dev subdomain not active or not found")
+        print("    ℹ Please activate workers.dev in Cloudflare Dashboard:")
+        print("      https://dash.cloudflare.com")
+        print("    Or provide a subdomain name in config to auto-create:")
+        print("      workers_dev_subdomain: your-desired-name")
+        return None
+
+    def create_workers_dev_subdomain(self, account_id: str, subdomain: str, dry_run: bool = False) -> bool:
+        """
+        Register a workers.dev subdomain for the account.
+        Returns True if successful.
+        """
+        if dry_run:
+            print(f"    [dry-run] Would register workers.dev subdomain: {subdomain}.workers.dev")
+            return True
+
+        try:
+            r = self.session.post(
+                f"{CF_API}/accounts/{account_id}/workers/subdomains",
+                json={"subdomain": subdomain},
+                timeout=30
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("success"):
+                    print(f"    ✓ Successfully registered workers.dev subdomain: {subdomain}.workers.dev")
+                    return True
+                else:
+                    print(f"    ✗ Failed to register subdomain: {data.get('errors', 'Unknown error')}")
+                    return False
+            elif r.status_code == 409:
+                print(f"    ✓ Subdomain {subdomain}.workers.dev already registered")
+                return True
+            else:
+                print(f"    ✗ Failed to register subdomain: HTTP {r.status_code} - {r.text[:200]}")
+                return False
+        except Exception as e:
+            print(f"    ✗ Failed to register subdomain: {e}")
+            return False
+
     # ── Worker ────────────────────────────────────────────────────────────────
 
     def upload_worker(
@@ -154,27 +222,36 @@ class CloudflareClient:
         worker_name: str,
         main_worker_url: str,
         mail_relay_secret: str,
+        main_worker_password: str | None = None,
         dry_run: bool = False,
     ) -> None:
         """Upload (or replace) the bridge Worker with env vars bound."""
         path = f"/accounts/{account_id}/workers/scripts/{worker_name}"
+        # plain_text is fine for the URL; secret_text prevents the value
+        # being read back through the API.
+        bindings = [
+            {
+                "type": "plain_text",
+                "name": "MAIN_WORKER_URL",
+                "text": main_worker_url,
+            },
+            {
+                "type": "secret_text",
+                "name": "MAIL_RELAY_SECRET",
+                "text": mail_relay_secret,
+            },
+        ]
+        # Add password binding if provided (for main Worker's x-custom-auth)
+        if main_worker_password:
+            bindings.append({
+                "type": "secret_text",
+                "name": "MAIN_WORKER_PASSWORD",
+                "text": main_worker_password,
+            })
         metadata = {
             "main_module": "worker.js",
             "compatibility_date": "2025-04-01",
-            # plain_text is fine for the URL; secret_text prevents the value
-            # being read back through the API.
-            "bindings": [
-                {
-                    "type": "plain_text",
-                    "name": "MAIN_WORKER_URL",
-                    "text": main_worker_url,
-                },
-                {
-                    "type": "secret_text",
-                    "name": "MAIL_RELAY_SECRET",
-                    "text": mail_relay_secret,
-                },
-            ],
+            "bindings": bindings,
         }
 
         if dry_run:
@@ -182,6 +259,8 @@ class CloudflareClient:
                 f"    [dry-run] Would upload Worker '{worker_name}' "
                 f"to account {account_id}"
             )
+            if main_worker_password:
+                print(f"    [dry-run] With MAIN_WORKER_PASSWORD binding")
             return
 
         files = {
@@ -198,6 +277,8 @@ class CloudflareClient:
                 f"Worker upload failed: HTTP {r.status_code} — {r.text[:300]}"
             )
         print(f"    ✓ Worker '{worker_name}' uploaded/updated")
+        if main_worker_password:
+            print(f"    ✓ With MAIN_WORKER_PASSWORD binding")
 
     # ── Zone ─────────────────────────────────────────────────────────────────
 
@@ -291,6 +372,7 @@ def process_account(
     worker_name: str,
     main_worker_url: str,
     mail_relay_secret: str,
+    main_worker_password: str | None,
     dry_run: bool,
 ) -> list[str]:
     """Deploy worker + configure email routing for one account. Returns error strings."""
@@ -318,11 +400,29 @@ def process_account(
         errors.append(f"{email}: {exc}")
         return errors
 
-    # 2. Upload / update the bridge Worker
+    # 2. Ensure workers.dev subdomain is active
+    workers_dev_subdomain = acct.get("workers_dev_subdomain")
+    subdomain = None
+    try:
+        if not dry_run:
+            subdomain = client.ensure_workers_dev_active(account_id, dry_run)
+            if not subdomain and workers_dev_subdomain:
+                if client.create_workers_dev_subdomain(account_id, workers_dev_subdomain, dry_run):
+                    subdomain = workers_dev_subdomain
+            if not subdomain:
+                print(f"  ⚠ Warning: workers.dev not active. Worker may not be accessible.")
+                print(f"    Please activate manually in Dashboard or set 'workers_dev_subdomain' in config")
+    except Exception as exc:
+        print(f"  ⚠ Failed to check/activate workers.dev: {exc}")
+
+    # 3. Upload / update the bridge Worker
     try:
         client.upload_worker(
-            account_id, worker_name, main_worker_url, mail_relay_secret, dry_run
+            account_id, worker_name, main_worker_url, mail_relay_secret, main_worker_password, dry_run
         )
+        if subdomain:
+            worker_url = f"https://{worker_name}.{subdomain}.workers.dev/health"
+            print(f"    ✓ Worker URL: {worker_url}")
     except Exception as exc:
         print(f"  ✗ Worker upload failed: {exc}")
         errors.append(f"{email} [worker]: {exc}")
@@ -400,6 +500,7 @@ def main() -> None:
     cfg = load_config(config_path)
     main_worker_url: str = cfg["main_worker_url"].rstrip("/")
     mail_relay_secret: str = cfg["mail_relay_secret"]
+    main_worker_password: str | None = cfg.get("main_worker_password")
     worker_name: str = cfg.get("worker_name", "cloudflare-email-relay-bridge")
     accounts: list[dict] = cfg.get("accounts", [])
 
@@ -416,9 +517,12 @@ def main() -> None:
     total = len(accounts)
 
     for idx, acct in enumerate(accounts, start=1):
+        # Allow per-account password override
+        acct_password = acct.get("main_worker_password", main_worker_password)
         errs = process_account(
             idx, total, acct,
             worker_name, main_worker_url, mail_relay_secret,
+            acct_password,
             args.dry_run,
         )
         all_errors.extend(errs)
