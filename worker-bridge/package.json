@@ -1,0 +1,16 @@
+{
+    "name": "cloudflare-email-relay-bridge",
+    "version": "1.0.0",
+    "description": "Bridge Worker that forwards incoming emails to cloudflare_temp_email in another CF account",
+    "private": true,
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "secret:relay": "wrangler secret put MAIL_RELAY_SECRET"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20250214.0",
+        "typescript": "^5.5.2",
+        "wrangler": "^4.0.0"
+    }
+}

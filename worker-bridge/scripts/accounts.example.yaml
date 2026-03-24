@@ -1,0 +1,33 @@
+# Batch Email Relay Bridge Deployment Config
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to accounts.yaml and fill in real values.
+# accounts.yaml is gitignored — never commit credentials.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# URL of the main cloudflare_temp_email Worker (the one in Account B)
+main_worker_url: "https://your-main-worker.workers.dev"
+
+# Shared secret.  Must match MAIL_RELAY_SECRET on the main Worker.
+# Generate with: openssl rand -hex 32
+mail_relay_secret: "CHANGE_ME_use_openssl_rand_-hex_32"
+
+# Name to use for the bridge Worker created in every account
+worker_name: "cloudflare-email-relay-bridge"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# accounts: list of Cloudflare accounts (each may own 1-N domains)
+# ─────────────────────────────────────────────────────────────────────────────
+accounts:
+  - email: "you@example.com"           # CF login email for account 1
+    api_key: "GLOBAL_API_KEY_ACCOUNT_1"
+    # account_id: "optional"           # leave blank → auto-detected
+    domains:
+      - "domain1.com"
+      - "domain2.com"
+
+  - email: "other@example.com"         # CF login email for account 2
+    api_key: "GLOBAL_API_KEY_ACCOUNT_2"
+    domains:
+      - "domain3.com"
+
+  # Add more accounts as needed…

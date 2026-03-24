@@ -106,6 +106,9 @@ ENABLE_AUTO_REPLY = false
 # """
 # Frontend URL
 # FRONTEND_URL = "https://xxxx.xxx"
+# Cross-account email relay: set a strong random secret, must match bridge Worker's MAIL_RELAY_SECRET
+# Use `wrangler secret put MAIL_RELAY_SECRET` to store securely instead of plain vars
+# MAIL_RELAY_SECRET = "your-strong-random-secret"
 # Enable check junk mail
 # ENABLE_CHECK_JUNK_MAIL = false
 # junk mail check list, if status exists and status is not pass, will be marked as junk mail

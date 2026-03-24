@@ -10,6 +10,7 @@ import { api as userApi } from './user_api';
 import { api as adminApi } from './admin_api';
 import { api as apiSendMail } from './mails_api/send_mail_api'
 import { api as telegramApi } from './telegram_api'
+import { api as relayApi } from './email/relay_api'
 
 import i18n from './i18n';
 import { email } from './email';
@@ -278,6 +279,7 @@ const health_check = async (c: Context<HonoCustomType>) => {
 
 app.get('/', health_check)
 app.get('/health_check', health_check)
+app.route('/', relayApi)
 app.all('/*', async c => c.text("Not Found", 404))
 
 

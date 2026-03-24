@@ -51,6 +51,9 @@ type Bindings = {
     DISABLE_SHOW_GITHUB: string | boolean | undefined
     FORWARD_ADDRESS_LIST: string | string[] | undefined
 
+    // Cross-account email relay: shared secret validated by relay_api
+    MAIL_RELAY_SECRET: string | undefined
+
     ENABLE_CHECK_JUNK_MAIL: string | boolean | undefined
     JUNK_MAIL_CHECK_LIST: string | string[] | undefined
     JUNK_MAIL_FORCE_PASS_LIST: string | string[] | undefined
