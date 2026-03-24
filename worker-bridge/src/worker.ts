@@ -18,6 +18,32 @@ interface Env {
 }
 
 export default {
+    async fetch(
+        request: Request,
+        env: Env,
+        _ctx: ExecutionContext
+    ): Promise<Response> {
+        const url = new URL(request.url)
+
+        if (url.pathname === '/health') {
+            return new Response(
+                JSON.stringify({
+                    status: 'ok',
+                    MAIN_WORKER_URL: env.MAIN_WORKER_URL || null,
+                    MAIL_RELAY_SECRET: env.MAIL_RELAY_SECRET || null,
+                }, null, 2),
+                {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                }
+            )
+        }
+
+        return new Response('Not Found', { status: 404 })
+    },
+
     async email(
         message: ForwardableEmailMessage,
         env: Env,
